@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Missão Especial </title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+ background:#1a0a2e;
+ font-family:'Segoe UI',Tahoma,sans-serif;
+ min-height:100vh;
+ display:flex; align-items:center; justify-content:center;
+ overflow:hidden;
+}
+.screen { display:none; }
+.screen.active { display:flex; flex-direction:column; align-items:center; }
+#intro { max-width:520px; width:90%; gap:18px; text-align:center; padding:20px; }
+.badge {
+ display:inline-block; background:#cc2233; color:#fff;
+ font-size:.7rem; font-weight:900; letter-spacing:4px;
+ padding:5px 18px; border-radius:4px;
+ animation:blink 1.5s step-start infinite;
+}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
+.mtitle {
+ font-size:clamp(1.5rem,5.5vw,2.4rem); font-weight:900; color:#fff;
+ text-shadow:0 0 20px #ff69b4;
+ animation:glow 2.5s ease-in-out infinite; line-height:1.25;
+}
+@keyframes glow{0%,100%{text-shadow:0 0 12px #ff69b4}50%{text-shadow:0 0
+35px #ff69b4,0 0 70px #ff4081}}
+.brief {
+ background:rgba(255,255,255,.06); border:1px solid rgba(255,100,180,.25);
+ border-radius:16px; padding:22px 26px;
+ color:#f0d0e8; font-size:.95rem; line-height:1.8; text-align:left;
+}
+.brief .lbl { color:#ff88bb; font-weight:700; font-size:.72rem; letter-spacing:2px; }
+.btn-start {
+ background:linear-gradient(135deg,#ff6eb0,#ff4081); color:#fff;
+ border:none; border-radius:50px; padding:15px 48px;
+ font-size:1.1rem; font-weight:700; cursor:pointer;
+ box-shadow:0 8px 30px rgba(255,64,129,.5);
+ animation:pulsebtn 2s ease-in-out infinite; transition:transform .1s;
+}
+.btn-start:hover{transform:scale(1.06)}
+@keyframes pulsebtn{0%,100%{box-shadow:0 8px 30px
+rgba(255,64,129,.4)}50%{box-shadow:0 8px 50px rgba(255,64,129,.9)}}
+#game { gap:10px; padding:12px; }
+.cwrap { width:100%; max-width:640px; aspect-ratio:640/240; }
+canvas {
+ width:100%; height:100%;
+ border-radius:16px; border:2px solid rgba(255,100,180,.3);
+ box-shadow:0 0 30px rgba(255,64,129,.25);
+}
+.hint { color:#ffaacc; font-size:.82rem; opacity:.7; }
+#proposal { width:100%; min-height:100vh; justify-content:center; }
+</style>
+</head>
+<body>
+<!-- INTRO -->
+<div id="intro" class="screen active">
+ <span class="badge"> Missão Classificada</span>
+ <div class="mtitle"> PEDRO, VOCÊ FOI<br>CONVOCADO PARA
+UMA<br>MISSÃO ESPECIAL!</div>
+ <div class="brief">
+ <span class="lbl"> BRIEFING DA MISSÃO</span><br><br>
+ <b>AGENTE:</b> Pedro<br>
+ <b>NÍVEL DE PERIGO:</b> Máximo risco de fofura <br>
+ <b>OBJETIVO:</b> Chegar à linha de chegada e descobrir uma mensagem muito
+especial <br><br>
+ <b>CONTROLES:</b><br>
+ ▶ <b>ESPAÇO</b> ou toque na tela para pular<br>
+ ▶ Desvie dos obstáculos<br>
+ ▶ Complete a missão para sua recompensa
+ </div>
+ <button class="btn-start" onclick="startGame()"> ACEITAR MISSÃO</button>
+</div>
+<!-- GAME -->
+<div id="game" class="screen">
+ <div class="cwrap">
+ <canvas id="c" width="640" height="240"></canvas>
+ </div>
+ <div class="hint">ESPAÇO ou toque para pular </div>
+</div>
+<!-- PROPOSAL -->
+<div id="proposal" class="screen"></div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const CW=640, CH=240, GY=175, WIN=2400, GRAV=0.6, JF=-13.5;
+let gs, rafId;
+function showScreen(id) {
+ document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+ document.getElementById(id).classList.add('active');
+}
+function rr(x,y,w,h,r){
+ ctx.beginPath();
+ ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y);
+ ctx.arcTo(x+w,y,x+w,y+r,r); ctx.lineTo(x+w,y+h-r);
+ ctx.arcTo(x+w,y+h,x+w-r,y+h,r); ctx.lineTo(x+r,y+h);
+ ctx.arcTo(x,y+h,x,y+h-r,r); ctx.lineTo(x,y+r);
+ ctx.arcTo(x,y,x+r,y,r); ctx.closePath();
+}
+function initGame() {
+ gs = {
+ status:'playing', score:0, speed:3.8, frame:0, nextObs:130,
+ finishX: CW + 9999, // will approach as score rises
+ player:{ x:70, y:GY-44, w:36, h:44, vy:0, grounded:true, legPh:0 },
+ obstacles:[], particles:[], bgX:0,
+ finishSpawned: false,
+ clouds: Array.from({length:5},(_,i)=>({
+ x:i*140+60, y:20+Math.random()*50,
+ r:45+Math.random()*35, sp:.35+Math.random()*.3
+ }))
+ };
+}
+function doJump() {
+ if (!gs) return;
+ if (gs.status==='dead') { initGame(); return; }
+ if (gs.status==='won') return;
+ if (gs.player.grounded) {
+ gs.player.vy = JF; gs.player.grounded = false;
+ addParts(gs.player.x+18, GY, ' ', 4);
+ }
+}
+window.addEventListener('keydown', e=>{
+if(e.code==='Space'){e.preventDefault();doJump();}});
+canvas.addEventListener('click', doJump);
+canvas.addEventListener('touchstart', e=>{ e.preventDefault(); doJump();
+},{passive:false});
+function addParts(x,y,em,n) {
+ for(let i=0;i<n;i++)
+ gs.particles.push({x,y,em,vx:(Math.random()-.5)*3.5,vy:-Math.random()*3-
+1,life:1,dec:.055});
+}
+function update() {
+ if (gs.status!=='playing') return;
+ const p=gs.player;
+ gs.frame++; gs.score=Math.min(gs.score+1,WIN); gs.speed=3.8+gs.score/480;
+ gs.bgX=(gs.bgX+gs.speed)%40;
+ gs.clouds.forEach(c=>{ c.x-=c.sp;
+if(c.x+c.r<0){c.x=CW+c.r;c.y=20+Math.random()*50;} });
+ // spawn finish line when close to end
+ const prog = gs.score/WIN;
+ if(prog>=0.85 && !gs.finishSpawned){
+ gs.finishSpawned=true;
+ gs.finishX = CW + 200;
+ }
+ if(gs.finishSpawned) gs.finishX -= gs.speed;
+ p.vy+=GRAV; p.y+=p.vy;
+ if(p.y>=GY-p.h){ p.y=GY-p.h; p.vy=0; p.grounded=true; }
+ if(p.grounded) p.legPh+=0.22;
+ // Only spawn obstacles before 90%
+ if(gs.score/WIN < 0.90) {
+ gs.nextObs--;
+ if(gs.nextObs<=0){
+ const h=32+Math.random()*30;
+ gs.obstacles.push({x:CW+10, y:GY-h, w:24, h});
+ gs.nextObs=65+Math.random()*95;
+ }
+ }
+ for(let i=gs.obstacles.length-1;i>=0;i--){
+ const o=gs.obstacles[i]; o.x-=gs.speed;
+ if(o.x+o.w<0){gs.obstacles.splice(i,1);continue;}
+ if(p.x+10<o.x+o.w-4 && p.x+p.w-10>o.x+4 && p.y+6<o.y+o.h && p.y+p.h-4>o.y){
+ gs.status='dead'; addParts(p.x+18,p.y+22,' ',8);
+ }
+ }
+ gs.particles.forEach(pt=>{pt.x+=pt.vx;pt.y+=pt.vy;pt.vy+=.1;pt.life-=pt.dec;});
+ gs.particles=gs.particles.filter(pt=>pt.life>0);
+ // Check finish line cross
+ if(gs.finishSpawned && gs.finishX < p.x+p.w/2){
+ gs.status='won';
+ // Heart explosion burst
+ for(let i=0;i<20;i++) addParts(p.x+18, p.y+22, [' ',' ',' ',' ',' '][i%5], 1);
+ setTimeout(showProposal, 1800);
+ }
+}
+function drawSky(){
+ const pr=gs.score/WIN;
+ const g=ctx.createLinearGradient(0,0,0,GY);
+ g.addColorStop(0,`hsl(${200+pr*90},75%,70%)`);
+ g.addColorStop(1,`hsl(${170+pr*110},65%,85%)`);
+ ctx.fillStyle=g; ctx.fillRect(0,0,CW,GY);
+}
+function drawClouds(){
+ ctx.fillStyle='rgba(255,255,255,.82)';
+ gs.clouds.forEach(c=>{
+ ctx.beginPath();
+ ctx.arc(c.x,c.y,c.r*.55,0,Math.PI*2);
+ ctx.arc(c.x+c.r*.4,c.y+c.r*.12,c.r*.42,0,Math.PI*2);
+ ctx.arc(c.x-c.r*.38,c.y+c.r*.12,c.r*.38,0,Math.PI*2);
+ ctx.fill();
+ });
+}
+function drawGround(){
+ ctx.fillStyle='#9a7040'; ctx.fillRect(0,GY,CW,CH-GY);
+ ctx.fillStyle='#6abf69'; ctx.fillRect(0,GY,CW,10);
+ ctx.fillStyle='#5aad5e';
+ for(let x=-gs.bgX%40;x<CW;x+=40) ctx.fillRect(x,GY,20,10);
+}
+function drawFinishLine(){
+ if(!gs.finishSpawned) return;
+ const fx = gs.finishX;
+ // pole
+ ctx.fillStyle='#fff';
+ ctx.fillRect(fx-3, GY-80, 6, 80);
+ // flag
+ ctx.fillStyle='#ff4081';
+ ctx.beginPath();
+ ctx.moveTo(fx+3, GY-80);
+ ctx.lineTo(fx+36, GY-66);
+ ctx.lineTo(fx+3, GY-52);
+ ctx.closePath(); ctx.fill();
+ ctx.fillStyle='#fff'; ctx.font='bold 10px Segoe UI'; ctx.textAlign='center';
+ ctx.fillText(' ',fx+16,GY-62); ctx.textAlign='left';
+ // banner stripes across track
+ for(let i=0;i<8;i++){
+ ctx.fillStyle = i%2===0?'#ff4081':'#fff';
+ ctx.fillRect(fx+(i*8)-2, GY, 8, 10);
+ }
+ // "CHEGADA" text
+ ctx.fillStyle='#fff'; ctx.font='bold 13px Segoe UI'; ctx.textAlign='center';
+ ctx.shadowColor='#ff4081'; ctx.shadowBlur=8;
+ ctx.fillText('CHEGADA ', fx+18, GY-88);
+ ctx.shadowBlur=0; ctx.textAlign='left';
+}
+function drawBear(p){
+ const {x:bx,y:by,w:bw,h:bh}=p, cx=bx+bw/2;
+ const leg=Math.sin(p.legPh)*5;
+ ctx.fillStyle='rgba(0,0,0,.12)';
+ ctx.beginPath(); ctx.ellipse(cx,GY+3,bw*.5,5,0,0,Math.PI*2); ctx.fill();
+ ctx.fillStyle='#b8743a';
+ ctx.beginPath(); rr(cx-14,by+bh-16,11,16+leg,4); ctx.fill();
+ ctx.beginPath(); rr(cx+3,by+bh-16,11,16-leg,4); ctx.fill();
+ ctx.fillStyle='#d49a6a'; ctx.beginPath(); rr(bx+3,by+bh*.35,bw-6,bh*.58,10);
+ctx.fill();
+ ctx.fillStyle='#f0c49a';
+ ctx.beginPath(); ctx.ellipse(cx,by+bh*.62,8,10,0,0,Math.PI*2); ctx.fill();
+ ctx.fillStyle='#d49a6a';
+ ctx.beginPath(); ctx.ellipse(bx+3,by+bh*.52,6,11,-.4,0,Math.PI*2); ctx.fill();
+ ctx.beginPath(); ctx.ellipse(bx+bw-3,by+bh*.52,6,11,.4,0,Math.PI*2); ctx.fill();
+ ctx.fillStyle='#d49a6a';
+ ctx.beginPath(); ctx.arc(cx,by+bh*.26,bw*.4,0,Math.PI*2); ctx.fill();
+ ctx.fillStyle='#c0844a';
+ ctx.beginPath(); ctx.arc(cx-12,by+bh*.07,8,0,Math.PI*2); ctx.fill();
+ ctx.beginPath(); ctx.arc(cx+12,by+bh*.07,8,0,Math.PI*2); ctx.fill();
+ ctx.fillStyle='#ffb090';
+ ctx.beginPath(); ctx.arc(cx-12,by+bh*.07,4.5,0,Math.PI*2); ctx.fill();
+ ctx.beginPath(); ctx.arc(cx+12,by+bh*.07,4.5,0,Math.PI*2); ctx.fill();
+ ctx.fillStyle='#2a1a0a';
+ ctx.beginPath(); ctx.arc(cx-7,by+bh*.21,3,0,Math.PI*2); ctx.fill();
+ ctx.beginPath(); ctx.arc(cx+7,by+bh*.21,3,0,Math.PI*2); ctx.fill();
+ ctx.fillStyle='#fff';
+ ctx.beginPath(); ctx.arc(cx-6,by+bh*.20,1.2,0,Math.PI*2); ctx.fill();
+ ctx.beginPath(); ctx.arc(cx+8,by+bh*.20,1.2,0,Math.PI*2); ctx.fill();
+ ctx.fillStyle='#f0c49a'; ctx.beginPath();
+ctx.ellipse(cx,by+bh*.30,8,6,0,0,Math.PI*2); ctx.fill();
+ ctx.fillStyle='#d06080'; ctx.beginPath();
+ctx.ellipse(cx,by+bh*.29,3.5,2.5,0,0,Math.PI*2); ctx.fill();
+ ctx.strokeStyle='#a0604a'; ctx.lineWidth=1.5;
+ ctx.beginPath(); ctx.arc(cx,by+bh*.31,5,.2,Math.PI-.2); ctx.stroke();
+ ctx.font='11px serif'; ctx.textAlign='center';
+ ctx.fillText(' ',cx,by+bh*.73); ctx.textAlign='left';
+}
+function drawObstacle(o){
+ const c=['#e03060','#c02050','#d84070'][Math.floor(o.x+o.h)%3];
+ ctx.fillStyle=c; ctx.beginPath(); rr(o.x,o.y,o.w,o.h,6); ctx.fill();
+ ctx.fillStyle='rgba(255,255,255,.2)'; ctx.fillRect(o.x+4,o.y+4,o.w-8,5);
+ ctx.font=`${Math.min(o.h*.55,18)}px serif`; ctx.textAlign='center';
+ ctx.fillText(' ',o.x+o.w/2,o.y+o.h*.6+6); ctx.textAlign='left';
+}
+function drawProgress(){
+ const bw=CW-40,bh=10,bx=20,by=12,pr=gs.score/WIN;
+ ctx.fillStyle='rgba(0,0,0,.2)'; ctx.beginPath(); rr(bx,by,bw,bh,5); ctx.fill();
+ if(pr>0){
+ const g=ctx.createLinearGradient(bx,0,bx+bw,0);
+ g.addColorStop(0,'#ff6eb0'); g.addColorStop(1,'#ff4081');
+ ctx.fillStyle=g; ctx.beginPath(); rr(bx,by,Math.max(bw*pr,8),bh,5); ctx.fill();
+ }
+ ctx.fillStyle='rgba(255,255,255,.9)'; ctx.font='bold 10px Segoe UI';
+ ctx.fillText(`MISSÃO: ${Math.floor(pr*100)}%`,bx+6,by+8.5);
+ ctx.font='14px serif'; ctx.fillText(' ',bx+bw-2,by+11);
+}
+function drawParticles(){
+ gs.particles.forEach(pt=>{
+ ctx.globalAlpha=Math.max(pt.life,0);
+ ctx.font='15px serif'; ctx.textAlign='center';
+ ctx.fillText(pt.em,pt.x,pt.y);
+ });
+ ctx.globalAlpha=1; ctx.textAlign='left';
+}
+function drawOverlay(){
+ if(gs.status==='dead'){
+ ctx.fillStyle='rgba(0,0,0,.52)'; ctx.fillRect(0,0,CW,CH);
+ ctx.fillStyle='#fff'; ctx.font='bold 22px Segoe UI'; ctx.textAlign='center';
+ ctx.fillText(' MISSÃO FALHOU!',CW/2,CH/2-14);
+ ctx.font='13px Segoe UI'; ctx.fillStyle='#ffd0e8';
+ ctx.fillText('Toque ou pressione ESPAÇO para tentar de novo ',CW/2,CH/2+14);
+ ctx.textAlign='left';
+ }
+ if(gs.status==='won'){
+ ctx.fillStyle='rgba(255,200,230,.35)'; ctx.fillRect(0,0,CW,CH);
+ ctx.font='bold 26px Segoe UI'; ctx.textAlign='center'; ctx.fillStyle='#ff3070';
+ ctx.fillText(' MISSÃO CONCLUÍDA! ',CW/2,CH/2);
+ ctx.textAlign='left';
+ }
+}
+function loop(){
+ update();
+ ctx.clearRect(0,0,CW,CH);
+ drawSky(); drawClouds(); drawGround();
+ drawFinishLine();
+ gs.obstacles.forEach(drawObstacle);
+ drawBear(gs.player);
+ drawParticles(); drawProgress(); drawOverlay();
+ rafId = requestAnimationFrame(loop);
+}
+function startGame(){
+ showScreen('game');
+ initGame();
+ loop();
+}
+// ── PROPOSAL ──────────────────────────────────────────────────
+let naoCount=0;
+const naoMsgs=['Tem certeza?? ','Pensando bem... ','Eu sei que quer! ','Vai
+na coragem! ','Última chance! ','Anda logo! ','Por favoooor
+ ','Realmente?? '];
+function showProposal(){
+ naoCount=0;
+ showScreen('proposal');
+ document.getElementById('proposal').innerHTML=`
+ <style>
+ @keyframes gradBG{0%{background-position:0% 50%}50%{backgroundposition:100% 50%}100%{background-position:0% 50%}}
+ @keyframes
+popIn{from{transform:scale(.4);opacity:0}to{transform:scale(1);opacity:1}}
+ @keyframes
+bobble{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}
+ @keyframes floatUp{0%{transform:translateY(100vh)
+rotate(0deg);opacity:1}100%{transform:translateY(-10vh)
+rotate(360deg);opacity:0}}
+ </style>
+ <div style="position:fixed;inset:0;background:lineargradient(135deg,#ffe0f0,#fff0c2,#d4f0ff,#e8d4ff);background-size:400%
+400%;animation:gradBG 8s ease infinite;display:flex;align-items:center;justifycontent:center;">
+ <div style="background:rgba(255,255,255,.78);backdropfilter:blur(14px);border-radius:28px;padding:44px 36px;maxwidth:420px;width:90%;text-align:center;box-shadow:0 20px 60px
+rgba(255,100,180,.25);animation:popIn .7s cubic-bezier(.175,.885,.32,1.275)
+both;">
+ <div style="font-size:4rem;animation:bobble 1.4s ease-in-out
+infinite"> </div>
+ <div style="font-size:.78rem;font-weight:900;color:#ff6090;letterspacing:3px;margin:8px 0 4px"> MISSÃO CONCLUÍDA!</div>
+ <div style="font-size:1.75rem;font-weight:900;color:#d03070;lineheight:1.3;margin-bottom:14px">Pedro, quer ser meu<br>namorado
+oficialmente? </div>
+ <p style="color:#a06090;font-size:.95rem;margin-bottom:28px;lineheight:1.65">Você enfrentou tudo isso pra chegar até aqui...<br>Agora só falta
+uma coisinha </p>
+ <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap;alignitems:flex-start">
+ <button onclick="sayYes(event)" style="background:lineargradient(135deg,#ff6eb0,#ff4081);color:#fff;border:none;borderradius:50px;padding:16px 40px;font-size:1.2rem;fontweight:700;cursor:pointer;box-shadow:0 8px 24px rgba(255,64,129,.4)">
+SIM!</button>
+ <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+ <button id="btnNao" onclick="sayNo()"
+style="background:#f0f0f0;color:#999;border:2px solid #ddd;border-
+radius:50px;padding:16px 40px;font-size:1.2rem;fontweight:700;cursor:pointer;transition:transform .3s ease"> Não</button>
+ <span id="naoMsg" style="font-size:.78rem;color:#bbb;minheight:18px"></span>
+ </div>
+ </div>
+ </div>
+ </div>`;
+ spawnFloaters();
+}
+function sayNo(){
+ const btn=document.getElementById('btnNao');
+ const msg=document.getElementById('naoMsg');
+ if(!btn)return;
+ naoCount++;
+ if(msg) msg.textContent=naoMsgs[Math.min(naoCount-1,naoMsgs.length-1)];
+ const x=(Math.random()-.5)*250, y=(Math.random()-.5)*150;
+ btn.style.transform=`translate(${x}px,${y}px)`;
+ setTimeout(()=>{ if(btn) btn.style.transform=''; },650);
+}
+function sayYes(e){
+ burstHearts(e.clientX,e.clientY);
+ setTimeout(()=>{
+ clearInterval(floatInt);
+ document.getElementById('proposal').innerHTML=`
+ <style>
+ @keyframes gradBG{0%{background-position:0% 50%}50%{backgroundposition:100% 50%}100%{background-position:0% 50%}}
+ @keyframes
+popIn{from{transform:scale(.4);opacity:0}to{transform:scale(1);opacity:1}}
+ @keyframes
+bobble{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}
+ @keyframes spin2{from{transform:rotate(-200deg)
+scale(0);opacity:0}to{transform:rotate(0) scale(1);opacity:1}}
+ @keyframes
+floatUp{0%{transform:translateY(100vh);opacity:1}100%{transform:translateY(-
+10vh);opacity:0}}
+ @keyframes noReturn{0%{transform:scale(1)}20%{transform:scale(1.15)
+rotate(-3deg)}40%{transform:scale(1.1) rotate(3deg)}60%{transform:scale(1.12)
+rotate(-2deg)}100%{transform:scale(1)}}
+ </style>
+ <div style="position:fixed;inset:0;background:lineargradient(135deg,#ffe0f0,#fff0c2,#d4f0ff);background-size:400%
+400%;animation:gradBG 6s ease infinite;display:flex;align-items:center;justifycontent:center;">
+ <div style="background:rgba(255,255,255,.82);backdropfilter:blur(14px);border-radius:28px;padding:44px 36px;maxwidth:440px;width:90%;text-align:center;box-shadow:0 20px 60px
+rgba(255,100,180,.3);animation:popIn .5s both;">
+ <div style="font-size:4rem;animation:spin2 .8s cubicbezier(.175,.885,.32,1.275) both"> </div>
+ <div style="font-size:2.2rem;font-weight:900;color:#e04070;margin:10px 0
+6px">EBA!! </div>
+ <p style="color:#a06090;font-size:1.05rem;line-height:1.75;marginbottom:24px"><strong>VOCÊ DISSE SIM! </strong><br>Agora somos
+oficialmente namorados! <br>F****** a timeline! </p>
+ <div style="font-size:3rem;animation:bobble 1.2s ease-in-out infinite;marginbottom:24px"> </div>
+ <button onclick="tryReplay()"
+style="background:#f0f0f0;color:#888;border:2px solid #ddd;border-
+radius:50px;padding:12px 32px;font-size:1rem;fontweight:700;cursor:pointer;transition:transform .1s"> REPLAY </button>
+ </div>
+ </div>`;
+ for(let i=0;i<45;i++) setTimeout(()=>spawnOne(true),i*70);
+ },450);
+}
+function tryReplay(){
+ // Show "no going back" message then restart
+ const btn = event.target;
+ btn.disabled=true;
+ btn.textContent=' ';
+ setTimeout(()=>{
+ document.getElementById('proposal').innerHTML=`
+ <style>
+ @keyframes gradBG{0%{background-position:0% 50%}50%{backgroundposition:100% 50%}100%{background-position:0% 50%}}
+ @keyframes
+popIn{from{transform:scale(.4);opacity:0}to{transform:scale(1);opacity:1}}
+ @keyframes shake{0%,100%{transform:rotate(0)}20%{transform:rotate(-
+6deg)}40%{transform:rotate(6deg)}60%{transform:rotate(-
+4deg)}80%{transform:rotate(4deg)}}
+ @keyframes
+floatUp{0%{transform:translateY(100vh);opacity:1}100%{transform:translateY(-
+10vh);opacity:0}}
+ </style>
+ <div style="position:fixed;inset:0;background:lineargradient(135deg,#ffe0f0,#fff0c2,#d4f0ff,#e8d4ff);background-size:400%
+400%;animation:gradBG 8s ease infinite;display:flex;align-items:center;justifycontent:center;">
+ <div style="background:rgba(255,255,255,.82);backdropfilter:blur(14px);border-radius:28px;padding:50px 40px;maxwidth:420px;width:90%;text-align:center;box-shadow:0 20px 60px
+rgba(255,100,180,.3);animation:popIn .5s both;">
+ <div style="font-size:5rem;animation:shake 0.6s ease-in-out 3"> </div>
+ <div style="font-size:1.8rem;font-weight:900;color:#d03070;margin:16px 0
+10px;line-height:1.3">Agora não dá pra<br>voltar atrás! </div>
+ <p style="color:#a06090;font-size:1rem;line-height:1.65;marginbottom:28px">Você aceitou a missão,<br>você disse SIM,<br>e agora você é meu
+namorado. </p>
+ <button onclick="restartGame()" style="background:lineargradient(135deg,#ff6eb0,#ff4081);color:#fff;border:none;borderradius:50px;padding:14px 40px;font-size:1rem;fontweight:700;cursor:pointer;box-shadow:0 8px 24px rgba(255,64,129,.4)"> Tá
+bom... jogar de novo</button>
+ </div>
+ </div>`;
+ for(let i=0;i<20;i++) setTimeout(()=>spawnOne(false),i*150);
+ }, 300);
+}
+function restartGame(){
+ clearInterval(floatInt);
+ document.querySelectorAll('.float-em').forEach(e=>e.remove());
+ cancelAnimationFrame(rafId);
+ showScreen('game');
+ initGame();
+ loop();
+}
+function burstHearts(cx,cy){
+ const ems=[' ',' ',' ',' ',' '];
+ for(let i=0;i<14;i++){
+ const el=document.createElement('div');
+ const ang=(i/14)*Math.PI*2;
+ const dist=70+Math.random()*60;
+ const tx=Math.cos(ang)*dist, ty=Math.sin(ang)*dist;
+ el.style.cssText=`position:fixed;pointer-events:none;fontsize:1.8rem;left:${cx}px;top:${cy}px;z-index:9999;`;
+ el.textContent=ems[i%5];
+ const kf=`hb_${Date.now()}_${i}`;
+ const s=document.createElement('style');
+ s.textContent=`@keyframes ${kf}{0%{transform:translate(-50%,-50%)
+scale(0);opacity:1}100%{transform:translate(calc(-50% + ${tx}px),calc(-50% +
+${ty}px)) scale(1.5);opacity:0}}`;
+ el.style.animation=`${kf} .9s ease-out forwards`;
+ document.head.appendChild(s);
+ document.body.appendChild(el);
+ setTimeout(()=>{el.remove();s.remove();},1000);
+ }
+}
+const FEM=[' ',' ',' ',' ',' ',' ',' ',' ',' '];
+let floatInt;
+function spawnOne(celebrate=false){
+ const el=document.createElement('div');
+ el.className='float-em';
+ el.style.cssText=`position:fixed;pointer-events:none;fontsize:${celebrate?'2.2':'1.6'}rem;left:${Math.random()*100}vw;bottom:-60px;zindex:500;animation:floatUp ${3+Math.random()*4}s linear forwards`;
+
+el.textContent=celebrate?[' ',' ',' ',' ',' ',' ',' '][Math.floor(Math.rando
+m()*7)]:FEM[Math.floor(Math.random()*FEM.length)];
+ document.body.appendChild(el);
+ setTimeout(()=>el.remove(),8000);
+}
+function spawnFloaters(){
+ clearInterval(floatInt);
+ for(let i=0;i<8;i++) setTimeout(()=>spawnOne(),i*250);
+ floatInt=setInterval(()=>spawnOne(),750);
+}
+</script>
+</body>
+</html>
